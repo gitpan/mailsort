@@ -1,6 +1,6 @@
 #!/usr/bin/perl
 #
-# $Id: mailsort,v 1.25 2004/07/26 16:49:05 andras Exp $
+# $Id: mailsort,v 1.26 2004/08/05 14:03:12 andras Exp $
 #
 
 =head1 NAME
@@ -151,8 +151,8 @@ from: F<http://www.usenix.org/publications/login/1998-8/toolman.html>
 =head1 AVAILABILITY
 
 The latest version of B<mailsort> is available from
-F<http://www.dns.net/dist/mailsort/> and also from
-I<CPAN>, at F</authors/id/A/AZ/AZS/mailsort/> and in
+F<http://www.dns.net/dist/mailsort/> and also from I<CPAN>, at
+F<http://www.cpan.org/authors/id/A/AZ/AZS/mailsort/> and in
 F<http://www.cpan.org/scripts/Mail/> .
 
 =head1 SCRIPT CATEGORIES
@@ -170,7 +170,7 @@ $CP = '/usr/bin/cp' if (! -x $CP);
 $CP = 'cp' if (! -x $CP); # hope it's in the path
 
 (my $BCMD = $0) =~ s/.*\///;
-(my $REVISION) = ('$Revision: 1.25 $' =~ /[^\d\.]*([\d\.]*)/);
+(my $REVISION) = ('$Revision: 1.26 $' =~ /[^\d\.]*([\d\.]*)/);
 my $HELPSTRING = "For help, type: $BCMD -h";
 (my $IDENT = '@(#)mailsort: sort mbox-style mail folders by timestamp')
     =~ s/^[^:]*: *//;
@@ -186,7 +186,7 @@ use Getopt::Std;
 use vars qw( $opt_d $opt_h $opt_L $opt_r $opt_v );
 use strict;
 
-if (! &getopts('dhLrv')) {
+if (! getopts('dhLrv')) {
     print STDERR "$USAGE\n$HELPSTRING\n";
     exit 2;
 }
@@ -306,27 +306,26 @@ sub signal_handler {
 $exitstatus = 0;
 @SIG{'INT', 'HUP', 'QUIT', 'PIPE'} = ('signal_handler') x 4;
 
-my %ord = split(" ",
-"Jan 1 Feb 2 Mar 3 Apr 4 May 5 Jun 6 Jul 7 Aug 8 Sep 9 Oct 10 Nov 11 Dec 12");
+my %ord = ( qw(Jan 1 Feb 2 Mar 3 Apr 4 May 5 Jun 6
+	    Jul 7 Aug 8 Sep 9 Oct 10 Nov 11 Dec 12) );
 
 Argument:
 while ($origname = $filename = shift) {
-    my ($rename, $sort_this, $m_count, $m_key, $m_text,
+    my ($rename, $m_count, $m_text,
 	$year, $month, $day, $sec, $min, $hour, $m, $t,
-	$previous, $wasblank, %found, @text);
+	$previous, %found, @text);
     if (! open(CURRENT, $filename)) {
-	&reportwarn("cannot open file", $origname);
+	reportwarn("cannot open file", $origname);
 	$exitstatus ++;
 	next Argument;
     }
+    my $sort_this = 0; my $wasblank = 1;
+    my $m_key = '0000000000000'; # the key for leading non-message text
     print STDERR (($filename eq '-') ? 'stdin' : "$filename") . ': reading'
 	if $VERBOSE;
-    $m_key = '0000000000000'; # the key for leading non-message text
-#    undef @text; undef %found; undef $m_text;
-    $sort_this = 0; $wasblank = 1;
     $m_count = 0;
     while (<CURRENT>) {
-	if ($wasblank && /^From / && &ishead($_)) {
+	if ($wasblank and /^From / and ishead($_)) {
 	    # end of message processing for previous message
 	    $found{$m_key} .= "$m_count:";
 	    $previous = $m_key;
@@ -357,7 +356,7 @@ while ($origname = $filename = shift) {
     }
     
     # store end of last message, add a final blank line if needed
-    if (! $wasblank && $sort_this) {
+    if (! $wasblank and $sort_this) {
 	$m_text .= "\n";
     }
     $found{$m_key} .= "$m_count:";
@@ -391,12 +390,12 @@ while ($origname = $filename = shift) {
 	    }
 	}
 	my $public = 0;
-	if (! $opened && ! open(TMPFILE, ">$tmpfile")) {
+	if (! $opened and ! open(TMPFILE, ">$tmpfile")) {
 	    # last chance: try making temp file in /tmp
 	    $_ = ($ENV{'TMPDIR'} || $ALTERNATE_TMPDIR);
 	    $tmpfile = "$_/$BCMD.$$";
 	    if (! open(TMPFILE, ">$tmpfile")) {
-		&reportwarn('cannot open temporary file', $origname);
+		reportwarn('cannot open temporary file', $origname);
 		$exitstatus ++;
 		next Argument;
 	    }
@@ -405,13 +404,13 @@ while ($origname = $filename = shift) {
 
 	my ($dev, $mode, $uid, $gid);
 	if (! (($dev, $mode, $uid, $gid) = (stat(CURRENT))[0,2,4,5])) {
-	    &reportwarn('cannot stat folder anymore (removed?)', $origname);
+	    reportwarn('cannot stat folder anymore (removed?)', $origname);
 	    $exitstatus ++;
 	    next Argument;
 	}
 	my ($tdev, $tmode);
 	if (! (($tdev, $tmode) = (stat(TMPFILE))[0,2])) {
-	    &reportwarn("cannot stat temporary file $tmpfile", $origname);
+	    reportwarn("cannot stat temporary file $tmpfile", $origname);
 	    $exitstatus ++;
 	    next Argument;
 	}
@@ -420,7 +419,7 @@ while ($origname = $filename = shift) {
 	# or if the temporary file is on a different device
 	$rename = (($> == 0) || ($> == $uid)) && ($dev == $tdev);
 	# check if this would make public a non-public file
-	if ($public && ($tmode & 044)) {
+	if ($public and ($tmode & 044)) {
 	    # switch off public read permissions; tough if this fails
 	    chmod($tmode ^ ($tmode & 044), $tmpfile);
 	    $rename = 0;
@@ -453,7 +452,7 @@ while ($origname = $filename = shift) {
 	# handle identical timestamps
 	foreach my $message_number (split(':', $found{$min})) {
 	    if (! print TMPFILE $text[$message_number]) {
-		&reportwarn('error while writing temporary file', $origname);
+		reportwarn('error while writing temporary file', $origname);
 		$exitstatus ++;
 		close(TMPFILE); unlink $tmpfile;
 		next Argument;
@@ -462,15 +461,15 @@ while ($origname = $filename = shift) {
     }
 
     if (! close(TMPFILE)) {
-	&reportwarn('error while closing temporary file', $origname);
+	reportwarn('error while closing temporary file', $origname);
 	$exitstatus ++;
 	unlink $tmpfile;
 	next Argument;
     } else {
 	if (($filename ne '-')
-	  && (! $rename || ! rename($tmpfile, $filename))) {
+	  and (! $rename || ! rename($tmpfile, $filename))) {
 	    if (system($CP, "$tmpfile", "$filename")) {
-		&reportwarn("cannot replace $filename", $origname);
+		reportwarn("cannot replace $filename", $origname);
 		die("Please check $tmpfile and $filename, stopping");
 	    }
 	    if (! unlink $tmpfile) {
@@ -486,6 +485,9 @@ while ($origname = $filename = shift) {
 exit($exitstatus);
 
 # $Log: mailsort,v $
+# Revision 1.26  2004/08/05 14:03:12  andras
+# slight code cleanup
+#
 # Revision 1.25  2004/07/26 16:49:05  andras
 # works with use strict, now uses Getopt::Std instead of getopts.pl
 # now requires perl 5, for perl 4 please use version 1.24
