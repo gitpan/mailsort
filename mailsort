@@ -1,0 +1,501 @@
+#!/usr/bin/perl
+'di ';
+'ds 00 \\"';
+'ig 00 ';
+#
+# $Id: mailsort,v 1.23 2004/02/29 19:31:09 andras Exp $
+#
+#   THIS PROGRAM IS ITS OWN MANUAL PAGE.  INSTALL IN man & bin.
+#
+
+$ALTERNATE_TMPDIR = '/tmp'; # use this if TMPDIR is not defined
+$CP = '/bin/cp';
+$CP = 'cp' if (! -x $CP); # hope it's in the path
+
+($BCMD = $0) =~ s/.*\///;
+($REVISION) = ('$Revision: 1.23 $' =~ /[^\d\.]*([\d\.]*)/);
+$HELPSTRING = "For help, type: $BCMD -h";
+($IDENT = '@(#)mailsort: sort mbox-style mail folders by timestamp')
+    =~ s/^[^:]*: *//;
+
+$USAGE = "Usage: $BCMD [-dLrv] folder ...";
+
+
+########################################################################
+# process arguments
+
+require('getopts.pl');
+if (! &Getopts('dhLrv')) {
+    print STDERR "$USAGE\n$HELPSTRING\n";
+    exit 2;
+}
+if ($opt_h) {
+    print <<EOT;
+$BCMD $REVISION: $IDENT
+$USAGE
+ -d			print extra debugging information
+ -L			display software license
+ -r			reverse sort order
+ -v			turn on verbose mode
+ folder ...		mailx/Mail mail folders to sort
+Unless reversed by -r, the default sort order is increasing by timestamp.
+$BCMD can be used as a filter.  When `-' is specified as an argument,
+standard input is read and sorted to standard output; any other folders
+specified are processed as usual.
+EOT
+	exit 0;
+} elsif ($opt_L) {
+    print <<EOT;
+    Copyright 1994-2004 Andras Salamon <andras\@dns.net>
+    This program is free software; you can redistribute it and/or modify
+    it under the terms of the GNU General Public License as published by
+    the Free Software Foundation; either version 2 of the License, or
+    (at your option) any later version.
+
+    This program is distributed in the hope that it will be useful,
+    but WITHOUT ANY WARRANTY; without even the implied warranty of
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+    GNU General Public License for more details.
+
+    If you do not already have a copy of the GNU General Public License,
+    you can obtain a copy by anonymous ftp from prep.ai.mit.edu
+    (file COPYING in directory /pub/gnu) or write to the Free Software
+    Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
+EOT
+	exit 0;
+}
+$VERBOSE = $opt_v;
+$DEBUG = $opt_d;
+
+if (@ARGV < 1) {
+    if (-t STDIN) {
+	print STDERR "$USAGE\n$HELPSTRING\n";
+	exit 2;
+    } else {
+	unshift(@ARGV, '-');
+    }
+}
+
+
+########################################################################
+# ishead
+#
+# See if the passed line buffer is a mail header.  Return true if yes.
+# Time zones and month/day names are only vaguely checked.
+
+sub ishead {
+    local($l) = @_;
+    local($f, $d) = ('', '');
+
+    if ($l =~ /^From ((("[^"]*")|\S)*)\s*tty\s*(\S*)\s*(.*)/) {
+	($f, $d) = ($1, $5);
+    } elsif ($l =~ /^From ((("[^"]*")|\S)*)\s*(.*)/) {
+	($f, $d) = ($1, $4);
+    } else {
+	return(0);
+    }
+
+    if ($f eq '' || $d eq '') {
+	return(0);
+    }
+    # note that this rejects lines which have whitespace after the year
+    return(
+    $d =~ m#([A-Z][a-z]{2} ){2}[ \d]\d [012]\d(:[0-5]\d){1,2}( ([A-Za-z]{3}|[\d+-,;:/])+)? (\d{2}|\d{4})$#);
+}
+
+
+########################################################################
+# reportwarn
+#
+# print specified warning message; uses global $origname
+
+sub reportwarn {
+    local($message) = @_;
+    if ($VERBOSE) {
+	print STDERR " --- Warning: $message, skipping\n";
+    } else {
+	print STDERR "Warning: $message, skipping $origname\n";
+    }
+}
+
+
+########################################################################
+# signal_handler
+#
+# catch interrupt signals; 1st argument is signal name
+# uses globals $exitstatus, $tmpfile and $origname
+
+sub signal_handler {
+    local($sig) = @_;
+    if ($VERBOSE) {
+	print STDERR "\n*** Caught signal $sig, cleaning up\n";
+    } else {
+	print STDERR "Caught signal $sig processing $origname, stopping\n";
+    }
+    unlink $tmpfile;
+    exit(++$exitstatus);
+}
+
+
+########################################################################
+# main program
+
+$exitstatus = 0;
+@SIG{'INT', 'HUP', 'QUIT', 'PIPE'} = ('signal_handler') x 4;
+
+%ord = split(" ",
+"Jan 1 Feb 2 Mar 3 Apr 4 May 5 Jun 6 Jul 7 Aug 8 Sep 9 Oct 10 Nov 11 Dec 12");
+
+Argument:
+while ($origname = $filename = shift) {
+    if (! open(CURRENT, $filename)) {
+	&reportwarn("cannot open file", $origname);
+	$exitstatus ++;
+	next Argument;
+    }
+    print STDERR (($filename eq '-') ? 'stdin' : "$filename") . ': reading'
+	if $VERBOSE;
+    $m_key = '0000000000000'; # the key for leading non-message text
+    undef @text; undef %found; undef $m_text;
+    $sort_this = 0; $wasblank = 1;
+    $m_count = 0;
+    while (<CURRENT>) {
+	if ($wasblank && /^From / && &ishead($_)) {
+	    # end of message processing for previous message
+	    $found{$m_key} .= "$m_count:";
+	    $previous = $m_key;
+	    push(@text, $m_text);
+	    undef $m_text;
+
+	    $m_count ++;
+	    @_ = split("[ \t]+", $_);
+	    ($m, $day, $t) = @_[3..5];
+	    $month = $ord{$m};
+	    ($hour, $min, $sec) = split(":", $t);
+	    $year = pop(@_); # last field, ignoring timezone if any
+	    $year += 1900 if ($year < 100);
+	    $m_key = sprintf("%04d%02d%02d%02d%02d%02d",
+			    $year, $month, $day, $hour, $min, $sec);
+
+	    # check if timestamp grows monotonically, ie. if already sorted
+	    # but modify for reverse option
+	    if ($opt_r) {
+		$sort_this = 1 if ($m_key gt $previous);
+	    } else {
+		$sort_this = 1 if ($m_key lt $previous);
+	    }
+	}
+
+	$m_text .= $_;
+	$wasblank = ($_ eq "\n");
+    }
+    
+    # store end of last message, add a final blank line if needed
+    if (! $wasblank && $sort_this) {
+	$m_text .= "\n";
+    }
+    $found{$m_key} .= "$m_count:";
+    push(@text, $m_text);
+    print STDERR
+	($m_count
+	    ? ("\b\b\b $m_count message" . (($m_count > 1) ? 's' : ''))
+	    : ', not mbox file') if $VERBOSE;
+
+    if ($filename eq '-') {
+	$tmpfile = '';
+	open(TMPFILE, ">&STDOUT");
+    } else {
+	if (! $sort_this) {
+	    print STDERR ($m_count ? " - already sorted\n" : " - ignored\n")
+		if $VERBOSE;
+	    next Argument;
+	}
+	# open temporary file
+	$origname = $filename;
+	$tmpfile = "$filename+";
+	# for a symbolic link, read actual file and ignore link
+	if ($_ = readlink($filename)) {
+	    # try making temp file in actual directory
+	    $filename = $_;
+	    $tmpfile = "$filename+";
+	    if (! ($opened = open(TMPFILE, ">$tmpfile"))) {
+		# try making temp file in original directory
+		$tmpfile = "$origname+";
+	    }
+	}
+	$public = 0;
+	if (! $opened && ! open(TMPFILE, ">$tmpfile")) {
+	    # last chance: try making temp file in /tmp
+	    $_ = ($ENV{'TMPDIR'} || $ALTERNATE_TMPDIR);
+	    $tmpfile = "$_/$BCMD.$$";
+	    if (! open(TMPFILE, ">$tmpfile")) {
+		&reportwarn('cannot open temporary file', $origname);
+		$exitstatus ++;
+		next Argument;
+	    }
+	    $public = 1;
+	}
+
+	if (! (($dev, $mode, $uid, $gid) = (stat(CURRENT))[0,2,4,5])) {
+	    &reportwarn('cannot stat folder anymore (removed?)', $origname);
+	    $exitstatus ++;
+	    next Argument;
+	}
+	if (! (($tdev, $tmode) = (stat(TMPFILE))[0,2])) {
+	    &reportwarn("cannot stat temporary file $tmpfile", $origname);
+	    $exitstatus ++;
+	    next Argument;
+	}
+	$mode &= 07777; $tmode &= 07777; # discard device info
+	# can't rename the file if it is someone else's
+	# or if the temporary file is on a different device
+	$rename = (($> == 0) || ($> == $uid)) && ($dev == $tdev);
+	# check if this would make public a non-public file
+	if ($public && ($tmode & 044)) {
+	    # switch off public read permissions; tough if this fails
+	    chmod($tmode ^ ($tmode & 044), $tmpfile);
+	    $rename = 0;
+	} elsif ($rename) {
+	    # can't rename the file if setting the mode or owner fails
+	    $rename = chmod($mode, $tmpfile)
+		&& chown($uid, $gid, $tmpfile);
+	}
+	if ($DEBUG) {
+	    print STDERR "\n";
+	    printf STDERR "owner %d.%d permissions %o\n", $uid, $gid, $mode;
+	    print STDERR '$tmpfile="' . "$tmpfile\"\n";
+	    print STDERR "using rename()\n" if $rename;
+	}
+    }
+    # Now TMPFILE should be open for writing with appropriate permissions.
+
+    print STDERR ", sorting" if $VERBOSE;
+    # do sorting in reverse order if requested
+    if ($opt_r) {
+	@dates = sort {$b cmp $a} keys(%found);
+    } else {
+	@dates = sort keys(%found);
+    }
+
+    # print out sorted file
+    foreach $min (@dates) {
+	chop $found{$min}; # remove trailing ':'
+	# handle identical timestamps
+	foreach $message_number (split(':', $found{$min})) {
+	    if (! print TMPFILE $text[$message_number]) {
+		&reportwarn('error while writing temporary file', $origname);
+		$exitstatus ++;
+		close(TMPFILE); unlink $tmpfile;
+		next Argument;
+	    }
+	}
+    }
+
+    if (! close(TMPFILE)) {
+	&reportwarn('error while closing temporary file', $origname);
+	$exitstatus ++;
+	unlink $tmpfile;
+	next Argument;
+    } else {
+	if (($filename ne '-')
+	  && (! $rename || ! rename($tmpfile, $filename))) {
+	    if (system($CP, "$tmpfile", "$filename")) {
+		&reportwarn("cannot replace $filename", $origname);
+		die("Please check $tmpfile and $filename, stopping");
+	    }
+	    if (! unlink $tmpfile) {
+		print STDERR " --- " if $VERBOSE;
+		print STDERR "Warning: cannot remove temporary file $tmpfile\n";
+		next Argument;
+	    }
+	}
+	print STDERR " - done\n" if $VERBOSE;
+    }
+}
+
+exit($exitstatus);
+
+# $Log: mailsort,v $
+# Revision 1.23  2004/02/29 19:31:09  andras
+# fixed availability string
+#
+# Revision 1.22  2004/02/29 19:19:36  andras
+# fixed manual date
+#
+# Revision 1.21  2004/02/29 19:14:07  andras
+# minor updates to manual, ARGV -> @ARGV
+#
+# Revision 1.20  1998/12/21 11:48:23  andras
+# updated manual page
+#
+# Revision 1.19  1998/12/21 11:11:16  andras
+# updated for Perl 5; fixed -r option
+#
+# Revision 1.18  1994/10/22 19:49:00  andras
+# revised availability info, minor manual changes
+#
+# Revision 1.17  1994/06/19  19:57:50  andras
+# updated for Solaris, updated availability information
+# also a few cosmetic changes
+#
+# Revision 1.16  1994/04/20  19:36:33  andras
+# posted to comp.lang.perl
+#
+################### BEGIN PERL/TROFF TRANSITION 
+.00 ;
+
+'di
+.nr nl 0-1
+.nr % 0
+.\\"'; __END__
+.\" ############## END PERL/TROFF TRANSITION
+.TH MAILSORT 1 "29 February 2004"
+.SH NAME
+mailsort \- sort mbox mail folders by date
+.SH SYNOPSIS
+.B mailsort
+[
+.BI -hLrv
+]
+[
+.IR folder \|.\|.\|.
+]
+.SH DESCRIPTION
+.I mailsort
+sorts
+.I mbox
+format mail folders by the dates in the
+.I `From '
+lines that separate mail messages in each folder.  Normally these lines
+specify the local time of arrival of each message.  Folders are
+reordered in increasing date order (with the oldest message first), and
+any leading non-mailbox items are left in place.  Files containing no
+mail headers are not considered mail folders, and are left unchanged.
+Folders which are already sorted are also left unchanged.  The
+.B -r
+option reverses the sorting order.
+.LP
+If no arguments are specified, or if
+.B -
+is an argument,
+.I mailsort
+acts as a filter, reading a mail folder from standard input and writing
+the sorted folder on standard output, in addition to rewriting any
+folders passed as arguments.
+.LP
+.I mailsort
+is intended to be fast and robust.
+.LP
+Normally,
+.I mailsort
+is silent.  Warnings are printed in case of problems encountered during
+processing.  In verbose mode, an indication of processing is printed for
+each folder.
+.LP
+If a folder needs sorting, a temporary file containing the sorted folder
+is created;
+.I mailsort
+will try to create this file first in the directory where the folder
+resides, then (if the folder is a symbolic link) in the directory
+containing the symbolic link, and then in the fall-back temporary
+directory.  The temporary file then replaces the original, if possible
+by renaming, otherwise by copying the temporary file over the original
+and deleting the temporary file.
+.LP
+.I mbox
+format files consist of possibly non-message material at the start of
+the file, and then at least one message that begins with a
+.I from
+line.  This consists of the word `From' followed by a return address,
+followed by anything, followed by a date in the format returned by the
+.IR ctime (3)
+library routine, optionally with a three-letter time zone indicator
+between the time and the year.  To cater for the version of
+.I mailx
+which ships with Solaris 2.x, the
+seconds field of the time may be omitted.  Here is an example of a valid
+.I from
+line:
+.IP
+From person@example.org Wed Dec 16 12:01:45 GMT 1998
+.SH OPTIONS
+.TP
+.B -d
+Display additional information for debugging purposes.
+.TP
+.B -h
+Display a brief help message.
+.TP
+.B -L
+Show the software license.
+.TP
+.B -r
+Reverse the order of sorting: the newest message in each folder will
+be placed first; the oldest, last.
+.TP
+.B -v
+Verbose mode.  Show the progress of the program.
+.SH ENVIRONMENT
+.SM
+.TP
+.B TMPDIR
+The last-resort location for the temporary file, if the preferred
+directories are not writable.  If not defined,
+.RI / tmp
+is used instead.
+.SH FILES
+A temporary file for every folder which needs sorting.
+.SH SEE ALSO
+Mail(1), mailx(1), mail(1), ctime(3),
+mutt(1), elm(1), pine(1), trn(1), nn(1),
+perl(1), gawk(1).
+.SH BUGS
+The time zone is ignored during sorting.  There is some controversy
+whether it should be used, since the
+.I from
+line is rumoured to supposedly contain a localized form of the time
+of arrival of the message.
+Timezone names are also nonstandard.
+.LP
+A
+.I system()
+call to
+.I cp
+is used to copy the temporary file across when
+.I rename()
+is not sufficient.  This would perhaps be more elegantly done inside
+.IR mailsort ,
+though performance might suffer.  (And what about interrupts?).
+.LP
+Performance across NFS-mounted partitions is unknown.  People have not
+reported any NFS-related problems, so I expect no problems.
+.SH AUTHOR
+Copyright 1994-2004 Andras Salamon
+.IR <andras @ dns.net> \|.
+.LP
+The inspiration for
+.I mailsort
+came from the
+.IR gawk -ish
+script
+.IR mboxsort ,
+by Roman Czyborra,
+who also provided useful feedback on two early versions of
+.IR mailsort .
+.LP
+When originally writing this program I was aware of one other script
+to sort mailboxes:
+.I sortmail
+(posted by Christopher Thomas
+to
+.I alt.sources
+on 26 June 1993).  During 1998, Daniel E. Singer wrote an article for
+USENIX ;login:
+which covered archiving and sorting mail.  This
+is available from:
+.IR http: // www.usenix.org / publications / login / 1998-8 / toolman.html
+.SH AVAILABILITY
+The latest version of 
+.I mailsort
+is available from
+.IR http: // www.dns.net / dist / mailsort-1.23.tar.gz \|.

@@ -1,0 +1,35 @@
+NAME
+    mailsort - sort mbox mail folders by date
+
+SYNOPSIS
+    mailsort [ -dhLrv ] [ folder... ]
+
+DESCRIPTION
+    mailsort sorts mbox format (single file) mail folders by the dates
+    in the `From ' lines that separate mail messages in each folder.
+    These separators normally look something like:
+
+From person@example.org Wed Dec 16 12:01:45 GMT 1998
+
+    Folders are reordered in increasing date order (with the oldest
+    message first), and any leading non-mailbox items are left in place.
+    For more information, see the embedded manual page.
+
+INSTALLATION
+    mailsort is a Perl script.  It has been tested with Perl version
+    4.0.36 and 5.6.1.  The script is its own manpage; install into your
+    usual directory for scripts, and make a link to it in your manual
+    directory.
+
+       cp mailsort /usr/local/bin
+       ln -s /usr/local/bin/mailsort /usr/local/man/man1/mailsort.1
+
+AUTHOR
+    Copyright 1994-2004 Andras Salamon <andras@dns.net>.
+
+AVAILABILITY
+    The latest version of mailsort is available from
+      http://www.dns.net/dist/mailsort-1.23.tar.gz
+    or via my software page
+      http://www.dns.net/andras/software.html
+
