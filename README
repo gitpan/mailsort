@@ -17,11 +17,13 @@ From person@example.org Wed Dec 16 12:01:45 GMT 1998
 
 INSTALLATION
     mailsort is a Perl script and has been tested with Perl version
-    4.0.36 and 5.6.1.  Install it into your usual scripts directory.
-    You can also generate the man page.
+    5.005 and 5.6.1.  Install it into your usual scripts directory.
+    You can also generate the man page in the usual way.
 
         cp mailsort /usr/local/bin
         pod2man mailsort > /usr/local/man/man1/mailsort.1
+
+    Those using perl 4, please use mailsort-1.24.
 
 AUTHOR
     Copyright 1994-2004 Andras Salamon <andras@dns.net>.
@@ -33,6 +35,6 @@ AVAILABILITY
         http://www.dns.net/andras/software.html
     or via CPAN, at
         /authors/id/A/AZ/AZS/mailsort/
-    or (coming soon) at
+    or
         http://www.cpan.org/scripts/Mail/
 

@@ -1,6 +1,6 @@
 #!/usr/bin/perl
 #
-# $Id: mailsort,v 1.24 2004/03/10 10:57:03 andras Exp $
+# $Id: mailsort,v 1.25 2004/07/26 16:49:05 andras Exp $
 #
 
 =head1 NAME
@@ -79,7 +79,8 @@ Verbose mode.  Show the progress of the program.
 
 =head1 PREREQUISITES
 
-F<getopts.pl>
+Now needs at least perl 5, since versions from 1.25 use F<Getopt::Std>
+instead of F<getopts.pl>.
 
 F</bin/cp> is used if I<rename()> is not successful.
 
@@ -101,8 +102,9 @@ A temporary file for every folder which needs sorting.
 
 =head1 CAVEATS
 
-Performance across NFS-mounted partitions is unknown.  People have not
-reported any NFS-related problems, so I expect no problems.
+Performance across NFS-mounted partitions is unknown, feedback would
+be welcome.  People have not reported any NFS-related problems, so I
+expect no problems.
 
 Only tested on Unix-like systems, but the only OS dependency should be
 that F</bin/cp> is used if I<rename()> is not successful.
@@ -151,7 +153,7 @@ from: F<http://www.usenix.org/publications/login/1998-8/toolman.html>
 The latest version of B<mailsort> is available from
 F<http://www.dns.net/dist/mailsort/> and also from
 I<CPAN>, at F</authors/id/A/AZ/AZS/mailsort/> and in
-F<http://www.cpan.org/scripts/Mail/> (coming soon).
+F<http://www.cpan.org/scripts/Mail/> .
 
 =head1 SCRIPT CATEGORIES
 
@@ -162,25 +164,29 @@ Mail
 ########################################################################
 # internal variables
 
-$ALTERNATE_TMPDIR = '/tmp'; # use this if TMPDIR is not defined
-$CP = '/bin/cp';
+my $ALTERNATE_TMPDIR = '/tmp'; # use this if TMPDIR is not defined
+my $CP = '/bin/cp';
 $CP = '/usr/bin/cp' if (! -x $CP);
 $CP = 'cp' if (! -x $CP); # hope it's in the path
 
-($BCMD = $0) =~ s/.*\///;
-($REVISION) = ('$Revision: 1.24 $' =~ /[^\d\.]*([\d\.]*)/);
-$HELPSTRING = "For help, type: $BCMD -h";
-($IDENT = '@(#)mailsort: sort mbox-style mail folders by timestamp')
+(my $BCMD = $0) =~ s/.*\///;
+(my $REVISION) = ('$Revision: 1.25 $' =~ /[^\d\.]*([\d\.]*)/);
+my $HELPSTRING = "For help, type: $BCMD -h";
+(my $IDENT = '@(#)mailsort: sort mbox-style mail folders by timestamp')
     =~ s/^[^:]*: *//;
 
-$USAGE = "Usage: $BCMD [-dLrv] folder ...";
+my $USAGE = "Usage: $BCMD [-dLrv] folder ...";
 
 
 ########################################################################
 # process arguments
 
-require('getopts.pl');
-if (! &Getopts('dhLrv')) {
+require 5.001;
+use Getopt::Std;
+use vars qw( $opt_d $opt_h $opt_L $opt_r $opt_v );
+use strict;
+
+if (! &getopts('dhLrv')) {
     print STDERR "$USAGE\n$HELPSTRING\n";
     exit 2;
 }
@@ -219,8 +225,10 @@ EOT
 EOT
 	exit 0;
 }
-$VERBOSE = $opt_v;
-$DEBUG = $opt_d;
+my $VERBOSE = $opt_v;
+my $DEBUG = $opt_d;
+
+my ($tmpfile, $exitstatus, $origname, $filename);
 
 if (@ARGV < 1) {
     if (-t STDIN) {
@@ -239,8 +247,8 @@ if (@ARGV < 1) {
 # Time zones and month/day names are only vaguely checked.
 
 sub ishead {
-    local($l) = @_;
-    local($f, $d) = ('', '');
+    my ($l) = @_;
+    my ($f, $d) = ('', '');
 
     if ($l =~ /^From ((("[^"]*")|\S)*)\s*tty\s*(\S*)\s*(.*)/) {
 	($f, $d) = ($1, $5);
@@ -265,7 +273,7 @@ sub ishead {
 # print specified warning message; uses global $origname
 
 sub reportwarn {
-    local($message) = @_;
+    my ($message) = @_;
     if ($VERBOSE) {
 	print STDERR " --- Warning: $message, skipping\n";
     } else {
@@ -281,7 +289,7 @@ sub reportwarn {
 # uses globals $exitstatus, $tmpfile and $origname
 
 sub signal_handler {
-    local($sig) = @_;
+    my ($sig) = @_;
     if ($VERBOSE) {
 	print STDERR "\n*** Caught signal $sig, cleaning up\n";
     } else {
@@ -298,11 +306,14 @@ sub signal_handler {
 $exitstatus = 0;
 @SIG{'INT', 'HUP', 'QUIT', 'PIPE'} = ('signal_handler') x 4;
 
-%ord = split(" ",
+my %ord = split(" ",
 "Jan 1 Feb 2 Mar 3 Apr 4 May 5 Jun 6 Jul 7 Aug 8 Sep 9 Oct 10 Nov 11 Dec 12");
 
 Argument:
 while ($origname = $filename = shift) {
+    my ($rename, $sort_this, $m_count, $m_key, $m_text,
+	$year, $month, $day, $sec, $min, $hour, $m, $t,
+	$previous, $wasblank, %found, @text);
     if (! open(CURRENT, $filename)) {
 	&reportwarn("cannot open file", $origname);
 	$exitstatus ++;
@@ -311,7 +322,7 @@ while ($origname = $filename = shift) {
     print STDERR (($filename eq '-') ? 'stdin' : "$filename") . ': reading'
 	if $VERBOSE;
     $m_key = '0000000000000'; # the key for leading non-message text
-    undef @text; undef %found; undef $m_text;
+#    undef @text; undef %found; undef $m_text;
     $sort_this = 0; $wasblank = 1;
     $m_count = 0;
     while (<CURRENT>) {
@@ -365,6 +376,7 @@ while ($origname = $filename = shift) {
 		if $VERBOSE;
 	    next Argument;
 	}
+	my $opened;
 	# open temporary file
 	$origname = $filename;
 	$tmpfile = "$filename+";
@@ -378,7 +390,7 @@ while ($origname = $filename = shift) {
 		$tmpfile = "$origname+";
 	    }
 	}
-	$public = 0;
+	my $public = 0;
 	if (! $opened && ! open(TMPFILE, ">$tmpfile")) {
 	    # last chance: try making temp file in /tmp
 	    $_ = ($ENV{'TMPDIR'} || $ALTERNATE_TMPDIR);
@@ -391,11 +403,13 @@ while ($origname = $filename = shift) {
 	    $public = 1;
 	}
 
+	my ($dev, $mode, $uid, $gid);
 	if (! (($dev, $mode, $uid, $gid) = (stat(CURRENT))[0,2,4,5])) {
 	    &reportwarn('cannot stat folder anymore (removed?)', $origname);
 	    $exitstatus ++;
 	    next Argument;
 	}
+	my ($tdev, $tmode);
 	if (! (($tdev, $tmode) = (stat(TMPFILE))[0,2])) {
 	    &reportwarn("cannot stat temporary file $tmpfile", $origname);
 	    $exitstatus ++;
@@ -426,6 +440,7 @@ while ($origname = $filename = shift) {
 
     print STDERR ", sorting" if $VERBOSE;
     # do sorting in reverse order if requested
+    my @dates;
     if ($opt_r) {
 	@dates = sort {$b cmp $a} keys(%found);
     } else {
@@ -436,7 +451,7 @@ while ($origname = $filename = shift) {
     foreach $min (@dates) {
 	chop $found{$min}; # remove trailing ':'
 	# handle identical timestamps
-	foreach $message_number (split(':', $found{$min})) {
+	foreach my $message_number (split(':', $found{$min})) {
 	    if (! print TMPFILE $text[$message_number]) {
 		&reportwarn('error while writing temporary file', $origname);
 		$exitstatus ++;
@@ -471,6 +486,10 @@ while ($origname = $filename = shift) {
 exit($exitstatus);
 
 # $Log: mailsort,v $
+# Revision 1.25  2004/07/26 16:49:05  andras
+# works with use strict, now uses Getopt::Std instead of getopts.pl
+# now requires perl 5, for perl 4 please use version 1.24
+#
 # Revision 1.24  2004/03/10 10:57:03  andras
 # moved to pod, added another path for cp
 # slight manual changes during conversion
