@@ -1,19 +1,174 @@
 #!/usr/bin/perl
-'di ';
-'ds 00 \\"';
-'ig 00 ';
 #
-# $Id: mailsort,v 1.23 2004/02/29 19:31:09 andras Exp $
+# $Id: mailsort,v 1.24 2004/03/10 10:57:03 andras Exp $
 #
-#   THIS PROGRAM IS ITS OWN MANUAL PAGE.  INSTALL IN man & bin.
-#
+
+=head1 NAME
+
+B<mailsort> - sort mbox mail folders by date
+
+=head1 SYNOPSIS
+
+B<mailsort> [ B<-hLrv> ] [ I<folder> ... ]
+
+=head1 README
+
+Sort mbox format mail folders by dates in the `From ' lines that separate
+messages.
+
+=head1 DESCRIPTION
+
+B<mailsort> sorts C<mbox> format mail folders by the dates in the
+C<`From '> lines that separate mail messages in each folder.  Normally
+these lines specify the local time of arrival of each message.  Folders
+are reordered in increasing date order (with the oldest message first),
+and any leading non-mailbox items are left in place.  Files containing
+no mail headers are not considered mail folders, and are left unchanged.
+Folders which are already sorted are also left unchanged.  The B<-r>
+option reverses the sorting order.
+
+If no arguments are specified, or if B<-> is an argument, B<mailsort>
+acts as a filter, reading a mail folder from standard input and writing
+the sorted folder on standard output, in addition to rewriting any
+folders passed as arguments.
+
+Normally, B<mailsort> is silent.  Warnings are printed in case of
+problems encountered during processing.  In verbose mode, an indication
+of processing is printed for each folder.
+
+If a folder needs sorting, a temporary file containing the sorted
+folder is created; B<mailsort> will try to create this file first in the
+directory where the folder resides, then (if the folder is a symbolic
+link) in the directory containing the symbolic link, and then in the
+fall-back temporary directory.  The temporary file then replaces the
+original, if possible by renaming, otherwise by copying the temporary
+file over the original and deleting the temporary file.
+
+C<mbox> format files consist of possibly non-message material at the start
+of the file, and then at least one message that begins with a C<From>
+line.  This consists of the word `From', a space, followed by a return
+address, followed by anything, followed by a date in the format returned
+by the ctime(3) library routine, optionally with a three-letter time
+zone indicator between the time and the year.  To cater for the version
+of B<mailx> which ships with Solaris 2.x, the seconds field of the time
+may be omitted.  Here is an example of a valid C<From> line:
+
+    From person@example.org Wed Dec 16 12:01:45 GMT 1998
+
+=head1 OPTIONS
+
+=over 5
+
+=item B<-d>	
+Display additional information for debugging purposes.
+
+=item B<-h>	
+Display a brief help message.
+
+=item B<-L>	
+Show the software license.
+
+=item B<-r>	
+Reverse the order of sorting: the newest message in each folder will
+be placed first; the oldest, last.
+
+=item B<-v>	
+Verbose mode.  Show the progress of the program.
+
+=back
+
+=head1 PREREQUISITES
+
+F<getopts.pl>
+
+F</bin/cp> is used if I<rename()> is not successful.
+
+=head1 EXAMPLES
+
+    mailsort -v myfolder
+    mailsort Mail/work inbox Mail/people/*
+    cat /var/spool/mail/* | mailsort > allmail
+
+=head1 ENVIRONMENT
+
+B<TMPDIR>	The last-resort location for the temporary file, if
+the preferred directories are not writable.  If not defined, F</tmp>
+is used instead.
+
+=head1 FILES
+
+A temporary file for every folder which needs sorting.
+
+=head1 CAVEATS
+
+Performance across NFS-mounted partitions is unknown.  People have not
+reported any NFS-related problems, so I expect no problems.
+
+Only tested on Unix-like systems, but the only OS dependency should be
+that F</bin/cp> is used if I<rename()> is not successful.
+
+B<mailsort> is intended to be fast and robust, but I cannot make any
+guarantees about its correctness.  If you absolutely can't afford a mail
+folder being corrupted, make a copy of it before sorting it.
+
+=head1 BUGS
+
+The time zone is ignored during sorting.  There is some controversy
+whether it should be used, since the C<From> line is rumoured to
+supposedly contain a localized form of the time of arrival of the message.
+Timezone names are also nonstandard.
+
+A I<system()> call to C<cp> is used to copy the temporary file across when
+I<rename()> is not sufficient.  This would perhaps be more elegantly
+done inside B<mailsort>, though performance might suffer.  (And what
+about interrupts?).
+
+=head1 SEE ALSO
+
+Mail(1), mailx(1), mail(1), ctime(3), mutt(1), elm(1), pine(1), perl(1),
+gawk(1).
+
+=head1 AUTHOR
+
+Copyright 1994-2004 Andras Salamon C<E<lt>andras@dns.netE<gt>>.
+
+=head1 HISTORY
+
+The inspiration for B<mailsort> came from the B<gawk>-ish script
+B<mboxsort>, by Roman Czyborra, who also provided useful feedback on
+two early versions of B<mailsort>.
+
+When originally writing this program I was aware of one other
+script to sort mailboxes: B<sortmail> (posted by Christopher
+Thomas to C<alt.sources> on 26 June 1993).
+
+During 1998, Daniel E. Singer wrote an article for C<USENIX ;login:>
+magazine which covered archiving and sorting mail.  This is available
+from: F<http://www.usenix.org/publications/login/1998-8/toolman.html>
+
+=head1 AVAILABILITY
+
+The latest version of B<mailsort> is available from
+F<http://www.dns.net/dist/mailsort/> and also from
+I<CPAN>, at F</authors/id/A/AZ/AZS/mailsort/> and in
+F<http://www.cpan.org/scripts/Mail/> (coming soon).
+
+=head1 SCRIPT CATEGORIES
+
+Mail
+
+=cut
+
+########################################################################
+# internal variables
 
 $ALTERNATE_TMPDIR = '/tmp'; # use this if TMPDIR is not defined
 $CP = '/bin/cp';
+$CP = '/usr/bin/cp' if (! -x $CP);
 $CP = 'cp' if (! -x $CP); # hope it's in the path
 
 ($BCMD = $0) =~ s/.*\///;
-($REVISION) = ('$Revision: 1.23 $' =~ /[^\d\.]*([\d\.]*)/);
+($REVISION) = ('$Revision: 1.24 $' =~ /[^\d\.]*([\d\.]*)/);
 $HELPSTRING = "For help, type: $BCMD -h";
 ($IDENT = '@(#)mailsort: sort mbox-style mail folders by timestamp')
     =~ s/^[^:]*: *//;
@@ -316,6 +471,10 @@ while ($origname = $filename = shift) {
 exit($exitstatus);
 
 # $Log: mailsort,v $
+# Revision 1.24  2004/03/10 10:57:03  andras
+# moved to pod, added another path for cp
+# slight manual changes during conversion
+#
 # Revision 1.23  2004/02/29 19:31:09  andras
 # fixed availability string
 #
@@ -341,161 +500,5 @@ exit($exitstatus);
 # Revision 1.16  1994/04/20  19:36:33  andras
 # posted to comp.lang.perl
 #
-################### BEGIN PERL/TROFF TRANSITION 
-.00 ;
+################### 
 
-'di
-.nr nl 0-1
-.nr % 0
-.\\"'; __END__
-.\" ############## END PERL/TROFF TRANSITION
-.TH MAILSORT 1 "29 February 2004"
-.SH NAME
-mailsort \- sort mbox mail folders by date
-.SH SYNOPSIS
-.B mailsort
-[
-.BI -hLrv
-]
-[
-.IR folder \|.\|.\|.
-]
-.SH DESCRIPTION
-.I mailsort
-sorts
-.I mbox
-format mail folders by the dates in the
-.I `From '
-lines that separate mail messages in each folder.  Normally these lines
-specify the local time of arrival of each message.  Folders are
-reordered in increasing date order (with the oldest message first), and
-any leading non-mailbox items are left in place.  Files containing no
-mail headers are not considered mail folders, and are left unchanged.
-Folders which are already sorted are also left unchanged.  The
-.B -r
-option reverses the sorting order.
-.LP
-If no arguments are specified, or if
-.B -
-is an argument,
-.I mailsort
-acts as a filter, reading a mail folder from standard input and writing
-the sorted folder on standard output, in addition to rewriting any
-folders passed as arguments.
-.LP
-.I mailsort
-is intended to be fast and robust.
-.LP
-Normally,
-.I mailsort
-is silent.  Warnings are printed in case of problems encountered during
-processing.  In verbose mode, an indication of processing is printed for
-each folder.
-.LP
-If a folder needs sorting, a temporary file containing the sorted folder
-is created;
-.I mailsort
-will try to create this file first in the directory where the folder
-resides, then (if the folder is a symbolic link) in the directory
-containing the symbolic link, and then in the fall-back temporary
-directory.  The temporary file then replaces the original, if possible
-by renaming, otherwise by copying the temporary file over the original
-and deleting the temporary file.
-.LP
-.I mbox
-format files consist of possibly non-message material at the start of
-the file, and then at least one message that begins with a
-.I from
-line.  This consists of the word `From' followed by a return address,
-followed by anything, followed by a date in the format returned by the
-.IR ctime (3)
-library routine, optionally with a three-letter time zone indicator
-between the time and the year.  To cater for the version of
-.I mailx
-which ships with Solaris 2.x, the
-seconds field of the time may be omitted.  Here is an example of a valid
-.I from
-line:
-.IP
-From person@example.org Wed Dec 16 12:01:45 GMT 1998
-.SH OPTIONS
-.TP
-.B -d
-Display additional information for debugging purposes.
-.TP
-.B -h
-Display a brief help message.
-.TP
-.B -L
-Show the software license.
-.TP
-.B -r
-Reverse the order of sorting: the newest message in each folder will
-be placed first; the oldest, last.
-.TP
-.B -v
-Verbose mode.  Show the progress of the program.
-.SH ENVIRONMENT
-.SM
-.TP
-.B TMPDIR
-The last-resort location for the temporary file, if the preferred
-directories are not writable.  If not defined,
-.RI / tmp
-is used instead.
-.SH FILES
-A temporary file for every folder which needs sorting.
-.SH SEE ALSO
-Mail(1), mailx(1), mail(1), ctime(3),
-mutt(1), elm(1), pine(1), trn(1), nn(1),
-perl(1), gawk(1).
-.SH BUGS
-The time zone is ignored during sorting.  There is some controversy
-whether it should be used, since the
-.I from
-line is rumoured to supposedly contain a localized form of the time
-of arrival of the message.
-Timezone names are also nonstandard.
-.LP
-A
-.I system()
-call to
-.I cp
-is used to copy the temporary file across when
-.I rename()
-is not sufficient.  This would perhaps be more elegantly done inside
-.IR mailsort ,
-though performance might suffer.  (And what about interrupts?).
-.LP
-Performance across NFS-mounted partitions is unknown.  People have not
-reported any NFS-related problems, so I expect no problems.
-.SH AUTHOR
-Copyright 1994-2004 Andras Salamon
-.IR <andras @ dns.net> \|.
-.LP
-The inspiration for
-.I mailsort
-came from the
-.IR gawk -ish
-script
-.IR mboxsort ,
-by Roman Czyborra,
-who also provided useful feedback on two early versions of
-.IR mailsort .
-.LP
-When originally writing this program I was aware of one other script
-to sort mailboxes:
-.I sortmail
-(posted by Christopher Thomas
-to
-.I alt.sources
-on 26 June 1993).  During 1998, Daniel E. Singer wrote an article for
-USENIX ;login:
-which covered archiving and sorting mail.  This
-is available from:
-.IR http: // www.usenix.org / publications / login / 1998-8 / toolman.html
-.SH AVAILABILITY
-The latest version of 
-.I mailsort
-is available from
-.IR http: // www.dns.net / dist / mailsort-1.23.tar.gz \|.

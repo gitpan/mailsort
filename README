@@ -13,23 +13,26 @@ From person@example.org Wed Dec 16 12:01:45 GMT 1998
 
     Folders are reordered in increasing date order (with the oldest
     message first), and any leading non-mailbox items are left in place.
-    For more information, see the embedded manual page.
+    For more information, see the embedded POD documentation.
 
 INSTALLATION
-    mailsort is a Perl script.  It has been tested with Perl version
-    4.0.36 and 5.6.1.  The script is its own manpage; install into your
-    usual directory for scripts, and make a link to it in your manual
-    directory.
+    mailsort is a Perl script and has been tested with Perl version
+    4.0.36 and 5.6.1.  Install it into your usual scripts directory.
+    You can also generate the man page.
 
-       cp mailsort /usr/local/bin
-       ln -s /usr/local/bin/mailsort /usr/local/man/man1/mailsort.1
+        cp mailsort /usr/local/bin
+        pod2man mailsort > /usr/local/man/man1/mailsort.1
 
 AUTHOR
     Copyright 1994-2004 Andras Salamon <andras@dns.net>.
 
 AVAILABILITY
     The latest version of mailsort is available from
-      http://www.dns.net/dist/mailsort-1.23.tar.gz
+        http://www.dns.net/dist/mailsort/
     or via my software page
-      http://www.dns.net/andras/software.html
+        http://www.dns.net/andras/software.html
+    or via CPAN, at
+        /authors/id/A/AZ/AZS/mailsort/
+    or (coming soon) at
+        http://www.cpan.org/scripts/Mail/
 
